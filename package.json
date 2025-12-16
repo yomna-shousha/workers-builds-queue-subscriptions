@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cf-typegen": "wrangler types"
   },
   "cloudflare": {
     "label": "Workers Builds Notifications",
@@ -16,6 +19,7 @@
   },
   "devDependencies": {
     "typescript": "^5.5.2",
+    "vitest": "^2.0.0",
     "wrangler": "^4.45.0"
   }
 }
