@@ -33,7 +33,39 @@ npm create cloudflare@latest -- --template=cloudflare/templates/workers-builds-n
 
 ## Setup
 
-### 1. Deploy the Worker
+> **Important:** The queue must be created before deploying the worker.
+
+### 1. Create a Queue
+
+#### Option A: Via Dashboard
+
+1. Go to [Queues](https://dash.cloudflare.com/?to=/:account/workers/queues)
+2. Click **Create Queue**
+3. Name it `builds-event-subscriptions` (or your preferred name)
+4. Click **Create**
+
+#### Option B: Via CLI
+
+```bash
+wrangler queues create builds-event-subscriptions
+```
+
+> **Note:** The queue name must match what's in `wrangler.jsonc`:
+> ```jsonc
+> "queues": {
+>   "consumers": [
+>     {
+>       "queue": "builds-event-subscriptions",  // ← Must match your queue name
+>       ...
+>     }
+>   ]
+> }
+> ```
+> If you use a different queue name, update `wrangler.jsonc` before deploying.
+
+---
+
+### 2. Deploy the Worker
 
 #### Option A: Via Dashboard
 
@@ -52,7 +84,7 @@ wrangler deploy
 
 ---
 
-### 2. Create a Webhook
+### 3. Create a Webhook
 
 #### Slack
 
@@ -75,7 +107,7 @@ Modify the payload format in `src/index.ts` to match your webhook's expected for
 
 ---
 
-### 3. Create a Cloudflare API Token
+### 4. Create a Cloudflare API Token
 
 1. Go to [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
 2. Click **Create Token**
@@ -85,7 +117,7 @@ Modify the payload format in `src/index.ts` to match your webhook's expected for
 
 ---
 
-### 4. Set Secrets
+### 5. Set Secrets
 
 #### Option A: Via Dashboard
 
@@ -105,36 +137,6 @@ wrangler secret put SLACK_WEBHOOK_URL
 wrangler secret put CLOUDFLARE_API_TOKEN
 # Paste your API token
 ```
-
----
-
-### 5. Create a Queue
-
-#### Option A: Via Dashboard
-
-1. Go to [Queues](https://dash.cloudflare.com/?to=/:account/workers/queues)
-2. Click **Create Queue**
-3. Name it `builds-event-subscriptions` (or your preferred name)
-4. Click **Create**
-
-#### Option B: Via CLI
-
-```bash
-wrangler queues create builds-event-subscriptions
-```
-
-> **Important:** The queue name must match what's in `wrangler.jsonc`:
-> ```jsonc
-> "queues": {
->   "consumers": [
->     {
->       "queue": "builds-event-subscriptions",  // ← Must match your queue name
->       ...
->     }
->   ]
-> }
-> ```
-> If you use a different queue name, update `wrangler.jsonc` and redeploy.
 
 ---
 
@@ -260,6 +262,10 @@ Trigger a build on any worker in your account. You should see a notification in 
 ---
 
 ## Troubleshooting
+
+### Deploy fails with "Queue does not exist"
+
+The queue must be created before deploying. See [Step 1: Create a Queue](#1-create-a-queue).
 
 ### No notifications appearing
 
