@@ -1,20 +1,37 @@
-# Cloudflare Workers Builds → Slack Notifications
+# Workers Builds Notifications
 
-A Cloudflare Worker that consumes [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) events from a [Queue](https://developers.cloudflare.com/queues/) and sends status notifications to Slack
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/workers-builds-notifications-template)
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yomna-shousha/workers-builds-queue-subscriptions)
+<!-- dash-content-start -->
+
+Get notified when your Workers Builds complete, fail, or are cancelled. This template uses [Queue Event Subscriptions](https://developers.cloudflare.com/queues/configuration/event-subscriptions/) to consume Workers Builds events and forward them to any webhook — Slack, Discord, or your own endpoint.
 
 ## Features
 
-| Event | Notification |
-|-------|--------------|
-| ✅ Build succeeded (production) | Live Worker URL |
-| ✅ Build succeeded (preview) | Preview URL |
-| ❌ Build failed | Build logs inline |
-| ⚠️ Build cancelled | Build logs inline |
-| 🚀 Build started | Build started |
+- 🔔 Real time notifications for build success, failure, and cancellation
+- 🔗 Works with any webhook (Slack, Discord, custom endpoints)
+- 📋 Includes build details: project name, status, duration, and other metadata 
+- 📜 Optional build logs, preview URL, and live deployment URL fetched via Cloudflare API
+
+## How It Works
+
+1. Workers Builds emits events to a Cloudflare Queue
+2. This Worker consumes those events via Queue Event Subscriptions
+3. Build details are formatted and sent to your configured webhook
+
+<!-- dash-content-end -->
+
+## Getting Started
+
+Outside of this repo, you can start a new project with this template using [C3](https://developers.cloudflare.com/pages/get-started/c3/) (the `create-cloudflare` CLI):
+
+```bash
+npm create cloudflare@latest -- --template=cloudflare/templates/workers-builds-notifications-template
+```
 
 ---
+
+## Setup
 
 ### 1. Deploy the Worker
 
@@ -27,21 +44,34 @@ A Cloudflare Worker that consumes [Workers Builds](https://developers.cloudflare
 #### Option B: Via CLI
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/workers-builds-queue-subscriptions.git
-cd workers-builds-queue-subscriptions
+git clone https://github.com/cloudflare/templates.git
+cd templates/workers-builds-notifications-template
 npm install
 wrangler deploy
 ```
 
 ---
 
-### 2. Create a Slack Webhook
+### 2. Create a Webhook
+
+#### Slack
 
 1. Go to [Slack Apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
 2. Name it (e.g., "Workers Builds Notifications") and select your workspace
 3. Go to **Incoming Webhooks** → Toggle **On**
 4. Click **Add New Webhook to Workspace** → Select your channel
 5. Copy the webhook URL
+
+#### Discord
+
+1. Go to your Discord server → **Server Settings** → **Integrations** → **Webhooks**
+2. Click **New Webhook** → Select your channel
+3. Copy the webhook URL
+4. Append `/slack` to the URL (Discord supports Slack-formatted payloads)
+
+#### Other Webhooks
+
+Modify the payload format in `src/index.ts` to match your webhook's expected format.
 
 ---
 
@@ -63,14 +93,14 @@ wrangler deploy
 2. Select your deployed worker
 3. Go to **Settings** → **Variables and Secrets**
 4. Add:
-   - `SLACK_WEBHOOK_URL` → Your Slack webhook URL
+   - `SLACK_WEBHOOK_URL` → Your webhook URL
    - `CLOUDFLARE_API_TOKEN` → Your API token
 
 #### Option B: Via CLI
 
 ```bash
 wrangler secret put SLACK_WEBHOOK_URL
-# Paste your Slack webhook URL
+# Paste your webhook URL
 
 wrangler secret put CLOUDFLARE_API_TOKEN
 # Paste your API token
@@ -130,28 +160,40 @@ wrangler queues subscription create builds-event-subscriptions \
   --events build.started,build.succeeded,build.failed
 ```
 
-> For more details, see [Event Subscriptions Documentation](https://developers.cloudflare.com/queues/event-subscriptions/manage-event-subscriptions/)
+> For more details, see [Event Subscriptions Documentation](https://developers.cloudflare.com/queues/configuration/event-subscriptions/)
 
 ---
 
 ### 7. Test It!
 
-Trigger a build on any worker in your account. You should see a notification in Slack within seconds!
+Trigger a build on any worker in your account. You should see a notification in your channel within seconds!
 
 ---
 
-## How It Works
+## Architecture
 
 ```
 ┌─────────────────┐     ┌─────────────┐     ┌──────────────────┐     ┌─────────┐
-│ Workers Builds  │────▶│   Queue     │────▶│ This Consumer    │────▶│  Slack  │
+│ Workers Builds  │────▶│   Queue     │────▶│ This Consumer    │────▶│ Webhook │
 │ (any worker)    │     │             │     │ Worker           │     │         │
 └─────────────────┘     └─────────────┘     └──────────────────┘     └─────────┘
 ```
 
 1. **Any worker** in your account triggers a build
 2. **Workers Builds** publishes an event to your **Queue**
-3. **This consumer worker** processes the event and sends a **Slack** notification
+3. **This consumer worker** processes the event and sends a notification to your **webhook**
+
+---
+
+## Event Types
+
+| Event | Notification |
+|-------|--------------|
+| ✅ Build succeeded (production) | Live Worker URL |
+| ✅ Build succeeded (preview) | Preview URL |
+| ❌ Build failed | Build logs inline |
+| ⚠️ Build cancelled | Build logs inline |
+| 🚀 Build started | Build started |
 
 ---
 
@@ -187,7 +229,7 @@ Trigger a build on any worker in your account. You should see a notification in 
 }
 ```
 
-### Event Types
+### Event Types Reference
 
 | Event Type | Description |
 |------------|-------------|
@@ -204,7 +246,7 @@ Trigger a build on any worker in your account. You should see a notification in 
 
 | Variable | Description |
 |----------|-------------|
-| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL |
+| `SLACK_WEBHOOK_URL` | Webhook URL (Slack, Discord, or custom) |
 | `CLOUDFLARE_API_TOKEN` | API token with Workers Builds and Scripts read access |
 
 ### Queue Settings (wrangler.jsonc)
@@ -234,3 +276,11 @@ Trigger a build on any worker in your account. You should see a notification in 
 
 - **Preview URL missing**: Build was for main/master branch (shows Live URL instead)
 - **Live URL missing**: Check token has correct permissions
+
+---
+
+## Learn More
+
+- [Queue Event Subscriptions](https://developers.cloudflare.com/queues/configuration/event-subscriptions/)
+- [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
+- [Cloudflare Queues](https://developers.cloudflare.com/queues/)
