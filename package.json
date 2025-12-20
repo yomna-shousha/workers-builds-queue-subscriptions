@@ -1,6 +1,5 @@
 {
   "name": "workers-builds-notifications-template",
-  "version": "1.0.0",
   "description": "Send Workers Builds status notifications to Slack, Discord, or any webhook via Event Subscriptions.",
   "private": true,
   "scripts": {
@@ -15,7 +14,8 @@
     "label": "Workers Builds Notifications",
     "products": ["Workers Builds", "Queues"],
     "categories": [],
-    "preview_image_url": ""
+    "preview_image_url": "",
+    "publish": true
   },
   "devDependencies": {
     "typescript": "^5.5.2",
