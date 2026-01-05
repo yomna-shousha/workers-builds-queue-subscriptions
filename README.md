@@ -10,7 +10,7 @@ Get notified when your Workers Builds complete, fail, or are cancelled. This tem
 
 - 🔔 Real time notifications for build success, failure, and cancellation
 - 🔗 Works with any webhook (Slack, Discord, custom endpoints)
-- 📋 Includes build details: project name, status, duration, and other metadata 
+- 📋 Includes build details: project name, status, and other metadata 
 - 📜 Optional build logs, preview URL, and live deployment URL fetched via Cloudflare API
 
 ## How It Works
