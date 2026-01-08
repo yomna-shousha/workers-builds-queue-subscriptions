@@ -29,7 +29,7 @@ interface CloudflareEvent {
   payload: {
     buildUuid: string;
     status: string;
-    buildOutcome: 'success' | 'fail' | 'cancelled' | null;
+    buildOutcome: 'success' | 'failure' | 'canceled' | 'cancelled' | null;
     createdAt: string;
     initializingAt?: string;
     runningAt?: string;
@@ -83,43 +83,84 @@ function extractBuildError(logs: string[]): string {
     return 'No logs available';
   }
 
-  // Look for the actual error message (not stack traces)
-  // Error messages usually start with "Error:" or similar
+  // Lines to ignore - these are build metadata, not errors
+  const ignorePatterns = [
+    /^Total Upload:/i,
+    /^Total Size:/i,
+    /\/\s*gzip:/i,
+    /^\d+\.\d+\s*(KiB|MiB|B)/i,
+    /^Uploaded/i,
+    /^Published/i,
+    /^Worker Startup Time:/i,
+    /^🌀/,
+  ];
+
+  // Primary error patterns (most specific first)
+  const errorPatterns = [
+    /^✘\s*\[ERROR\]/i,           // ✘ [ERROR] ...
+    /^\[ERROR\]/i,                // [ERROR] ...
+    /^ERROR:/i,                   // ERROR: ...
+    /^Error:/,                    // Error: ...
+    /^❌/,                        // ❌ ...
+  ];
+
+  // Look for the FIRST error (not last)
   for (let i = 0; i < logs.length; i++) {
     const line = logs[i];
-    // Skip stack trace lines
-    if (line?.trim().startsWith('at ')) continue;
+    if (!line?.trim()) continue;
+
+    // Skip stack traces
+    if (line.trim().startsWith('at ')) continue;
     
-    // Look for error message patterns
-    if (line?.match(/^Error:|^ERROR:|^\[ERROR\]|^✘.*ERROR/i)) {
-      // Get this line and maybe the next line if it's not a stack trace
-      let errorMsg = line;
-      if (logs[i + 1] && !logs[i + 1]?.trim().startsWith('at ')) {
-        errorMsg += '\n' + logs[i + 1];
+    // Skip metadata lines
+    if (ignorePatterns.some(pattern => pattern.test(line))) continue;
+
+    // Check for error patterns
+    if (errorPatterns.some(pattern => pattern.test(line))) {
+      // Found an error! Get this line and potentially the next line
+      let errorMsg = line.trim();
+      
+      // Check if next line provides additional context (but not a stack trace or metadata)
+      if (logs[i + 1]) {
+        const nextLine = logs[i + 1].trim();
+        if (nextLine && 
+            !nextLine.startsWith('at ') && 
+            !ignorePatterns.some(pattern => pattern.test(nextLine))) {
+          errorMsg += '\n' + nextLine;
+        }
       }
+      
       return errorMsg.length > 500 ? errorMsg.substring(0, 500) + '...' : errorMsg;
     }
   }
 
-  // Fallback: look for common error indicators in last 20 lines
-  const lastLines = logs.slice(-20);
-  const errorIndicators = [
-    'Failed:', 'failed:', 'FAILED:',
-    'Module not found', 'Cannot find module',
-    'Build failed', 'Compilation failed',
-    'SyntaxError', 'TypeError', 'ReferenceError',
+  // Fallback: look for common error keywords
+  const errorKeywords = [
+    'Module not found',
+    'Cannot find module',
+    'Compilation failed',
+    'Build failed',
+    'SyntaxError:',
+    'TypeError:',
+    'ReferenceError:',
+    'failed to',
+    'Failed to',
   ];
 
-  for (const line of lastLines) {
-    if (errorIndicators.some((indicator) => line?.includes(indicator))) {
-      return line.length > 500 ? line.substring(0, 500) + '...' : line;
+  for (let i = 0; i < logs.length; i++) {
+    const line = logs[i];
+    if (!line?.trim()) continue;
+    if (ignorePatterns.some(pattern => pattern.test(line))) continue;
+    
+    if (errorKeywords.some(keyword => line.includes(keyword))) {
+      return line.trim().length > 500 ? line.trim().substring(0, 500) + '...' : line.trim();
     }
   }
 
-  // Last resort: return last non-empty line
+  // Last resort: return last non-empty line that's not metadata
   for (let i = logs.length - 1; i >= 0; i--) {
-    if (logs[i]?.trim()) {
-      const line = logs[i];
+    const line = logs[i]?.trim();
+    if (line && !ignorePatterns.some(pattern => pattern.test(line))) {
       return line.length > 500 ? line.substring(0, 500) + '...' : line;
     }
   }
@@ -149,89 +190,102 @@ function buildSlackBlocks(
   const dashUrl = getDashboardUrl(event);
   const commitUrl = getCommitUrl(event);
 
-  const isCancelled = buildOutcome === 'cancelled';
+  const isCancelled = buildOutcome === 'canceled' || buildOutcome === 'cancelled' || event.type?.includes('canceled') || event.type?.includes('cancelled');
   const isFailed = event.type?.includes('failed') && !isCancelled;
   const isSucceeded = event.type?.includes('succeeded');
   const isProduction = isProductionBranch(meta?.branch);
-
-  // Build context line: `branch` • commit
-  const contextParts: string[] = [];
-  if (meta?.branch) {
-    contextParts.push(`\`${meta.branch}\``);
-  }
-  if (meta?.commitHash) {
-    const commitText = meta.commitHash.substring(0, 7);
-    contextParts.push(commitUrl ? `<${commitUrl}|${commitText}>` : commitText);
-  }
-  const contextLine = contextParts.length > 0 ? contextParts.join('  •  ') : '';
 
   // ===================
   // SUCCESS: Production
   // ===================
   if (isSucceeded && isProduction) {
-    let text = `✅ *${workerName}* deployed successfully`;
-    if (contextLine) text += `\n${contextLine}`;
+    const blocks: any[] = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `✅  *Production Deploy*\n*${workerName}*`,
+        },
+        accessory: liveUrl || dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: liveUrl ? 'View Worker' : 'View Build' },
+          url: liveUrl || dashUrl,
+        } : undefined,
+      },
+    ];
 
-    const block: any = {
-      type: 'section',
-      text: { type: 'mrkdwn', text },
-    };
-
-    if (liveUrl) {
-      block.accessory = {
-        type: 'button',
-        text: { type: 'plain_text', text: 'View Worker', emoji: true },
-        url: liveUrl,
-      };
+    // Metadata in context block - separated with bullets
+    const contextElements: any[] = [];
+    
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
+      });
+    }
+    
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    return { blocks: [block] };
+    // Always add context block even if only partial metadata
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
+    }
+
+    return { blocks };
   }
 
   // =================
   // SUCCESS: Preview
   // =================
   if (isSucceeded && !isProduction) {
-    let text = `✅ *${workerName}* preview ready`;
-    if (contextLine) text += `\n${contextLine}`;
+    const blocks: any[] = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `✅  *Preview Deploy*\n*${workerName}*`,
+        },
+        accessory: previewUrl || dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: previewUrl ? 'View Preview' : 'View Build' },
+          url: previewUrl || dashUrl,
+        } : undefined,
+      },
+    ];
 
-    const block: any = {
-      type: 'section',
-      text: { type: 'mrkdwn', text },
-    };
-
-    if (previewUrl) {
-      block.accessory = {
-        type: 'button',
-        text: { type: 'plain_text', text: 'View Preview', emoji: true },
-        url: previewUrl,
-      };
+    // Metadata in context block
+    const contextElements: any[] = [];
+    
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
+      });
+    }
+    
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    return { blocks: [block] };
-  }
-
-  // =================
-  // SUCCESS: No URL (fallback)
-  // =================
-  if (isSucceeded) {
-    let text = `✅ *${workerName}* deployed successfully`;
-    if (contextLine) text += `\n${contextLine}`;
-
-    const block: any = {
-      type: 'section',
-      text: { type: 'mrkdwn', text },
-    };
-
-    if (dashUrl) {
-      block.accessory = {
-        type: 'button',
-        text: { type: 'plain_text', text: 'View Build', emoji: true },
-        url: dashUrl,
-      };
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
     }
 
-    return { blocks: [block] };
+    return { blocks };
   }
 
   // =========
@@ -242,47 +296,49 @@ function buildSlackBlocks(
 
     const blocks: any[] = [
       {
-        type: 'header',
-        text: { type: 'plain_text', text: `❌ Build Failed: ${workerName}`, emoji: true },
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `❌  *Build Failed*\n*${workerName}*`,
+        },
+        accessory: dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: 'View Logs' },
+          url: dashUrl,
+          style: 'danger',
+        } : undefined,
       },
     ];
 
-    // Metadata fields
-    const fields: any[] = [];
-    if (meta?.branch) fields.push({ type: 'mrkdwn', text: `*Branch*\n\`${meta.branch}\`` });
+    // Metadata in context block
+    const contextElements: any[] = [];
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
     if (meta?.commitHash) {
       const commitText = meta.commitHash.substring(0, 7);
-      fields.push({ 
+      contextElements.push({ 
         type: 'mrkdwn', 
-        text: `*Commit*\n${commitUrl ? `<${commitUrl}|${commitText}>` : commitText}` 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
       });
     }
     if (meta?.author) {
       const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
-      fields.push({ type: 'mrkdwn', text: `*Author*\n${authorName}` });
-    }
-    
-    if (fields.length > 0) {
-      blocks.push({ type: 'section', fields });
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    // Error block
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
+    }
+
+    // Error message
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `\`\`\`${error}\`\`\`` },
+      text: {
+        type: 'mrkdwn',
+        text: `\`\`\`${error}\`\`\``,
+      },
     });
-
-    if (dashUrl) {
-      blocks.push({
-        type: 'actions',
-        elements: [{
-          type: 'button',
-          text: { type: 'plain_text', text: 'View Full Logs', emoji: true },
-          url: dashUrl,
-          style: 'danger',
-        }],
-      });
-    }
 
     return { blocks };
   }
@@ -291,23 +347,43 @@ function buildSlackBlocks(
   // CANCELLED
   // ===========
   if (isCancelled) {
-    let text = `⚠️ *${workerName}* build cancelled`;
-    if (contextLine) text += `\n${contextLine}`;
+    const blocks: any[] = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `⚠️  *Build Cancelled*\n*${workerName}*`,
+        },
+        accessory: dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: 'View Build' },
+          url: dashUrl,
+        } : undefined,
+      },
+    ];
 
-    const block: any = {
-      type: 'section',
-      text: { type: 'mrkdwn', text },
-    };
-
-    if (dashUrl) {
-      block.accessory = {
-        type: 'button',
-        text: { type: 'plain_text', text: 'View Build', emoji: true },
-        url: dashUrl,
-      };
+    // Metadata in context block
+    const contextElements: any[] = [];
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
+      });
+    }
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    return { blocks: [block] };
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
+    }
+
+    return { blocks };
   }
 
   // =========
@@ -345,6 +421,18 @@ export default {
           continue;
         }
 
+        // Debug logging to see what metadata we're getting
+        console.log('Event metadata:', {
+          type: event.type,
+          workerName: event.source?.workerName,
+          buildOutcome: event.payload?.buildOutcome,
+          status: event.payload?.status,
+          branch: event.payload?.buildTriggerMetadata?.branch,
+          commitHash: event.payload?.buildTriggerMetadata?.commitHash,
+          author: event.payload?.buildTriggerMetadata?.author,
+          repoName: event.payload?.buildTriggerMetadata?.repoName,
+        });
+
         if (event.type.includes('started') || event.type.includes('queued')) {
           message.ack();
           continue;
@@ -353,7 +441,7 @@ export default {
         const isSucceeded = event.type.includes('succeeded');
         const isFailed = event.type.includes('failed');
         const buildOutcome = event.payload.buildOutcome;
-        const isCancelled = buildOutcome === 'cancelled';
+        const isCancelled = buildOutcome === 'canceled' || buildOutcome === 'cancelled' || event.type?.includes('canceled') || event.type?.includes('cancelled');
         const workerName = event.source?.workerName || event.payload.buildTriggerMetadata?.repoName;
         const accountId = event.metadata.accountId;
 
