@@ -195,26 +195,6 @@ function buildSlackBlocks(
   const isSucceeded = event.type?.includes('succeeded');
   const isProduction = isProductionBranch(meta?.branch);
 
-  // Standardized metadata fields for all notifications
-  const fields: any[] = [];
-  
-  if (meta?.branch) {
-    fields.push({ type: 'mrkdwn', text: `*Branch*\n\`${meta.branch}\`` });
-  }
-  
-  if (meta?.commitHash) {
-    const commitText = meta.commitHash.substring(0, 7);
-    fields.push({ 
-      type: 'mrkdwn', 
-      text: `*Commit*\n${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
-    });
-  }
-  
-  if (meta?.author) {
-    const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
-    fields.push({ type: 'mrkdwn', text: `*Author*\n${authorName}` });
-  }
-
   // ===================
   // SUCCESS: Production
   // ===================
@@ -224,24 +204,35 @@ function buildSlackBlocks(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `✅ *${workerName}* deployed successfully`,
+          text: `✅  *Production Deploy*\n*${workerName}*`,
         },
+        accessory: liveUrl || dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: liveUrl ? '🚀 View Worker' : 'View Build', emoji: true },
+          url: liveUrl || dashUrl,
+        } : undefined,
       },
     ];
 
-    if (fields.length > 0) {
-      blocks.push({ type: 'section', fields });
+    // Metadata in context block
+    const contextElements: any[] = [];
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
+      });
+    }
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    if (liveUrl || dashUrl) {
-      blocks.push({
-        type: 'actions',
-        elements: [{
-          type: 'button',
-          text: { type: 'plain_text', text: liveUrl ? 'View Worker' : 'View Build', emoji: true },
-          url: liveUrl || dashUrl,
-        }],
-      });
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
     }
 
     return { blocks };
@@ -256,24 +247,35 @@ function buildSlackBlocks(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `✅ *${workerName}* preview ready`,
+          text: `✅  *Preview Deploy*\n*${workerName}*`,
         },
+        accessory: previewUrl || dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: previewUrl ? '👁️ View Preview' : 'View Build', emoji: true },
+          url: previewUrl || dashUrl,
+        } : undefined,
       },
     ];
 
-    if (fields.length > 0) {
-      blocks.push({ type: 'section', fields });
+    // Metadata in context block
+    const contextElements: any[] = [];
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
+      });
+    }
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    if (previewUrl || dashUrl) {
-      blocks.push({
-        type: 'actions',
-        elements: [{
-          type: 'button',
-          text: { type: 'plain_text', text: previewUrl ? 'View Preview' : 'View Build', emoji: true },
-          url: previewUrl || dashUrl,
-        }],
-      });
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
     }
 
     return { blocks };
@@ -290,16 +292,39 @@ function buildSlackBlocks(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `❌ *${workerName}* build failed`,
+          text: `❌  *Build Failed*\n*${workerName}*`,
         },
+        accessory: dashUrl ? {
+          type: 'button',
+          text: { type: 'plain_text', text: '📋 View Logs', emoji: true },
+          url: dashUrl,
+          style: 'danger',
+        } : undefined,
       },
     ];
 
-    if (fields.length > 0) {
-      blocks.push({ type: 'section', fields });
+    // Metadata in context block
+    const contextElements: any[] = [];
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
+      });
+    }
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
     }
 
-    // Error block
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
+    }
+
+    // Error message
     blocks.push({
       type: 'section',
       text: {
@@ -307,18 +332,6 @@ function buildSlackBlocks(
         text: `\`\`\`${error}\`\`\``,
       },
     });
-
-    if (dashUrl) {
-      blocks.push({
-        type: 'actions',
-        elements: [{
-          type: 'button',
-          text: { type: 'plain_text', text: 'View Full Logs', emoji: true },
-          url: dashUrl,
-          style: 'danger',
-        }],
-      });
-    }
 
     return { blocks };
   }
@@ -332,24 +345,35 @@ function buildSlackBlocks(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `⚠️ *${workerName}* build cancelled`,
+          text: `⚠️  *Build Cancelled*\n*${workerName}*`,
         },
-      },
-    ];
-
-    if (fields.length > 0) {
-      blocks.push({ type: 'section', fields });
-    }
-
-    if (dashUrl) {
-      blocks.push({
-        type: 'actions',
-        elements: [{
+        accessory: dashUrl ? {
           type: 'button',
           text: { type: 'plain_text', text: 'View Build', emoji: true },
           url: dashUrl,
-        }],
+        } : undefined,
+      },
+    ];
+
+    // Metadata in context block
+    const contextElements: any[] = [];
+    if (meta?.branch) {
+      contextElements.push({ type: 'mrkdwn', text: `*Branch:* \`${meta.branch}\`` });
+    }
+    if (meta?.commitHash) {
+      const commitText = meta.commitHash.substring(0, 7);
+      contextElements.push({ 
+        type: 'mrkdwn', 
+        text: `*Commit:* ${commitUrl ? `<${commitUrl}|${commitText}>` : `\`${commitText}\``}` 
       });
+    }
+    if (meta?.author) {
+      const authorName = meta.author.includes('@') ? meta.author.split('@')[0] : meta.author;
+      contextElements.push({ type: 'mrkdwn', text: `*Author:* ${authorName}` });
+    }
+
+    if (contextElements.length > 0) {
+      blocks.push({ type: 'context', elements: contextElements });
     }
 
     return { blocks };
